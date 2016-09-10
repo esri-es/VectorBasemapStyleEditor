@@ -926,6 +926,9 @@ define([
         if(checked && this.vectorBasemapLayer) {
           this.map.setMapCursor("crosshair");
           this.eyeTool.mapClickHandle.resume();
+          var tabPanel = registry.byId("main-center-pane");
+          var tabs = tabPanel.getChildren();
+          tabPanel.selectChild(tabs[1]);
         } else {
           this.map.setMapCursor("default");
           this.eyeTool.mapClickHandle.pause();

@@ -53,21 +53,46 @@ define([
   "dijit/form/ValidationTextBox",
   "dijit/form/CheckBox",
   "dijit/form/Select",
+  "dijit/Tooltip",
   "application/dijit/UniqueComboBox",
   "dojox/form/HorizontalRangeSlider",
   "esri/undoManager",
   "application/Operations/ApplyStyle",
+  "application/Operations/StyleUpdate",
   "application/dijit/ColorSelectorDialog",
   "application/jsoneditor-master/dist/jsoneditor"
 ], function (declare, lang, array, Color, colors, query, json, Deferred, all, on, dom, domAttr, domStyle, domClass, put,
              arcgisUtils, arcgisPortal, urlUtils, esriRequest, Map, IdentityManager, HomeButton, Search, VectorTileLayer, vectorTile,
              Memory, Observable, OnDemandList, OnDemandGrid, Selection, editor, DijitRegistry,
-             registry, ConfirmDialog, ValidationTextBox, CheckBox, Select, UniqueComboBox,
-             HorizontalRangeSlider, UndoManager, ApplyStyle, ColorSelectorDialog, JSONEditor) {
+             registry, ConfirmDialog, ValidationTextBox, CheckBox, Select, Tooltip, UniqueComboBox,
+             HorizontalRangeSlider, UndoManager, ApplyStyle, StyleUpdate, ColorSelectorDialog, JSONEditor) {
 
+  /**
+   *
+   * TODO: USE dojo/_base/Color(...) FROM THE VERY START FOR ALL COLOR ISSUES INSTEAD OF ASSUMING HEX VALUES...
+   *
+   *   From: https://www.mapbox.com/mapbox-gl-style-spec/#types-color
+   *   TODO: does dojo/_base/Color(...) work correctly for all these possible color values?
+   *
+   *       "#ff0"
+   *       "#ffff00"
+   *       "rgb(255, 255, 0)"
+   *       "rgba(255, 255, 0, 1)"
+   *       "hsl(100, 50%, 50%)"
+   *       "hsla(100, 50%, 50%, 1)"
+   *       "yellow"
+   *
+   *       background-color
+   *       fill-color
+   *       fill-outline-color
+   *       line-color
+   *       icon-color
+   *       icon-halo-color
+   *       text-color
+   *       text-halo-color
+   *       circle-color
+   */
 
-  // STYLE LAYER LIST //
-  var StyleLayersList = declare([OnDemandGrid, Selection, editor, DijitRegistry], {keepScrollPosition: true});
 
   /**
    * MAIN APPLICATION
@@ -81,8 +106,8 @@ define([
     // ZOOM RANGE //
     zoomRange: {
       min: 0,
-      max: 18,
-      count: 19
+      max: 20,
+      count: 21
     },
 
     // STYLE LAYER TYPES //
@@ -121,7 +146,7 @@ define([
      */
     constructor: function (config) {
       declare.safeMixin(this, config);
-      // PRESERVE DRAWING BUFFER SO WE CAN GET TO THE PIXELS //
+      // PRESERVE DRAWING BUFFER SO WE CAN GET TO THE PIXELS WHEN USING THE PICK COLOR MAP TOOL //
       vectorTile.Renderer.prototype.options.preserveDrawingBuffer = true;
     },
 
@@ -138,21 +163,41 @@ define([
 
       // PORTAL //
       this.portal = new arcgisPortal.Portal(this.sharinghost);
-      this.portal.on("load", lang.hitch(this, function () {
+      this.portal.on("load", function () {
         // SIGN IN //
-        this.portal.signIn().then(lang.hitch(this, function (loggedInUser) {
+        this.portal.signIn().then(function (loggedInUser) {
 
           // PORTAL ONLY SUPPORTS HTTPS //
-          if(this.portal.allSSL && (window.location.protocol !== "https:")) {
-            window.location.protocol = "https:";
-            window.location.reload();
+          var notSecure = /http:/i;
+          if(this.portal.allSSL && notSecure.test(window.location.protocol)) {
+            alert("Your ArcGIS.com organization requires all traffic be secure.  Please sign in again after we restart this app...");
+            // FORCE HTTPS //
+            window.location = window.location.href.replace(notSecure, "https:");
           }
 
           // WELCOME DIALOG CONTENT //
-          var welcomeContent = put("ul.welcome-content");
-          put(welcomeContent, "li", "Always make a backup copy of the item before using this app");
-          put(welcomeContent, "li", "The user experience is focused on color replacement");
-          put(welcomeContent, "li", "The ‘Pick Color’ map tool only works on locations where styles don’t have opacity");
+          var welcomeContent = put("div");
+
+          // WARNING //
+          put(welcomeContent, "div", { innerHTML: "<strong>W A R N I N G</strong>: this version of the application is going through some updates and may not work as expected." });
+          put(welcomeContent, "br");
+
+          // DEPLOYMENT //
+          put(welcomeContent, "div", "DEPLOYMENT");
+          var deploymentList = put(welcomeContent, "ul.welcome-content");
+          put(deploymentList, "li", "Get copy of this application from GitHub and deploy to a web accessible location");
+          put(deploymentList, "li", "Create a new web application item in your Org pointing to your application");
+          put(deploymentList, "li", "Register the new web application item and make note of the App ID");
+          put(deploymentList, "li", "In ../config/default.js change the oauthappid to the above App ID");
+
+          // DETAILS //
+          put(welcomeContent, "div", "DETAILS");
+          var detailsList = put(welcomeContent, "ul.welcome-content");
+          put(detailsList, "li", "Always make a backup copy of the item before using this app");
+          put(detailsList, "li", "The user experience is focused on color replacement");
+          put(detailsList, "li", "The ‘Pick Color’ map tool only works on locations where styles don’t have opacity");
+          put(detailsList, "li", "Edit style json directly by clicking on 'id' cell. Warning: use caution!");
+
           // WELCOME DIALOG //
           var welcomeDlg = new ConfirmDialog({
             title: MainApp.appName,
@@ -193,29 +238,29 @@ define([
           this.initializeUndoManager();
 
           // SAVE BASEMAP STYLE //
-          registry.byId("update-btn").on("click", lang.hitch(this, this.updateBasemapStyle));
+          registry.byId("update-btn").on("click", this.saveStyleChangesToUserItem.bind(this));
 
           // CLEAR DISPLAY MESSAGE //
           MainApp.displayMessage();
-        }), MainApp.displayMessage);
-      }));
+        }.bind(this), MainApp.displayMessage);
+      }.bind(this));
 
     },
 
     /**
-     *
+     * UPDATE USER INFORMATION - FULL NAME AND THUMBNAIL
      */
     updateUserInfo: function () {
       var portalUserNode = dom.byId("portaluser-section");
       if(this.portalUser) {
-        put(portalUserNode, "tr td $ <td img.user-thumb", this.portalUser.fullName, {src: this.portalUser.thumbnailUrl});
+        put(portalUserNode, "tr td $ <td img.user-thumb", this.portalUser.fullName, { src: this.portalUser.thumbnailUrl });
       } else {
         portalUserNode.innerHTML = "";
       }
     },
 
     /**
-     *
+     * INITIALIZE THE VARIOUS GRIDS AND LISTS USED IN THE APP
      */
     initializeGrids: function () {
 
@@ -225,28 +270,28 @@ define([
       // ITEM LIST //
       this.userBasemapsItemsList = new (declare([OnDemandGrid, Selection, DijitRegistry]))({
         bufferRows: 300,
-        sort: [{attribute: "title", descending: false}],
+        sort: [{ attribute: "title", descending: false }],
         noDataMessage: "No Items",
         selectionMode: "single",
         columns: [
           {
             label: "Title",
             field: "title",
-            renderCell: lang.hitch(this, function (item, value, node, options) {
+            renderCell: function (item, value, node, options) {
               var titleNode = put("div.basemap-item-title");
               var titleLabelNode = put(titleNode, "span", value);
               titleLabelNode.title = item.id;
 
               var detailsNode = put(titleNode, "span.basemap-item-action", "details");
-              on(detailsNode, "click", lang.hitch(this, function (evt) {
+              on(detailsNode, "click", function (evt) {
                 evt.stopPropagation();
                 var detailsUrlTemplate = (item.owner === this.portalUser.username) ? "{0}//{1}.{2}/home/item.html?id={4}" : "{0}//{3}/home/item.html?id={4}";
                 var agsDetailsUrl = lang.replace(detailsUrlTemplate, [document.location.protocol, this.portalUser.portal.urlKey, this.portalUser.portal.customBaseUrl, this.portalUser.portal.portalHostname, item.id]);
                 window.open(agsDetailsUrl);
-              }));
+              }.bind(this));
 
               return titleNode;
-            })
+            }.bind(this)
           },
           {
             label: "Owner",
@@ -261,59 +306,66 @@ define([
       this.userBasemapsItemsList.startup();
 
       // ROW CLICK //
-      this.userBasemapsItemsList.on("dgrid-select", lang.hitch(this, function (evt) {
+      this.userBasemapsItemsList.on("dgrid-select", function (evt) {
         var item = evt.rows[0].data;
         registry.byId("update-btn").set("disabled", (item.owner != this.portalUser.username));
         this.itemSelected(item);
-      }));
+      }.bind(this));
 
+
+      // =========================================================================================== //
+
+      // STYLE LAYER LIST //
+      var StyleLayersList = declare([OnDemandGrid, Selection, editor, DijitRegistry], { keepScrollPosition: true });
 
       // =========================================================================================== //
 
 
       // FILTER TEXTBOX //
       this.filterInput = registry.byId("filter-input");
-      this.filterInput.on("change", lang.hitch(this, function (evt) {
+      this.filterInput.on("change", function (evt) {
         this.sourceLayerList.set("value", null);
         this.styleLayersList.refresh();
-      }));
+      }.bind(this));
 
       // SOURCE-LAYER COMBOBOX FILTER //
       this.sourceLayerList = new UniqueComboBox({
-        style: "width:300px;",
+        style: "width:250px;",
         placeHolder: 'select source-layer',
         searchAttr: "source-layer",
         intermediateChanges: true,
-        fetchProperties: {sort: [{attribute: "source-layer", descending: false}]}
+        fetchProperties: { sort: [{ attribute: "source-layer", descending: false }] }
       }, dom.byId("source-layer-combo"));
       this.sourceLayerList.startup();
-      this.sourceLayerList.on("change", lang.hitch(this, function (evt) {
+      this.sourceLayerList.on("change", function (evt) {
         this.filterInput.set("value", null);
         this.styleLayersList.refresh();
-      }));
+      }.bind(this));
 
       // USE CURRENT ZOOM FILTER //
-      registry.byId("current-zoom-chk").on("change", lang.hitch(this, function (evt) {
+      registry.byId("current-zoom-chk").on("change", function (evt) {
         this.styleLayersList.refresh();
-      }));
+      }.bind(this));
 
       // STYLE LAYERS LIST //
       this.styleLayersList = new StyleLayersList({
-        sort: [{attribute: "source-layer", descending: false}, {attribute: "minzoom", descending: false}],
+        sort: [{ attribute: "source-layer", descending: false }, { attribute: "minzoom", descending: false }],
         noDataMessage: "No Styles",
         selectionMode: "none",
         columns: this.getStyleColumns(true),
-        query: lang.hitch(this, this.searchBySourceLayers)
+        query: this.searchBySourceLayers.bind(this)
       }, put(dom.byId("full-list-node"), "div"));
       this.styleLayersList.startup();
-      this.styleLayersList.on(".dgrid-cell.field-id:click", lang.hitch(this, this.idCellClick, this.styleLayersList));
+      this.styleLayersList.on(".dgrid-cell.field-id:click", this.idCellClick.bind(this, this.styleLayersList));
+      this.styleLayersList.on(".dgrid-cell.field-zoom:mouseover", this.zoomCellOver.bind(this, this.styleLayersList));
+      this.styleLayersList.on(".dgrid-cell.field-zoom:mouseout", this.zoomCellOut.bind(this, this.styleLayersList));
 
       // CLEAR FILTERS //
-      on(dom.byId("clear-source-layer-filter"), "click", lang.hitch(this, function (evt) {
+      on(dom.byId("clear-source-layer-filter"), "click", function (evt) {
         registry.byId("current-zoom-chk").set("checked", false);
         this.sourceLayerList.set("value", null);
         this.filterInput.set("value", null);
-      }));
+      }.bind(this));
 
 
       // =========================================================================================== //
@@ -323,12 +375,13 @@ define([
       this.searchResultsList = new StyleLayersList({
         noDataMessage: "No Styles",
         columns: this.getStyleColumns(),
-        query: lang.hitch(this, this.searchByColorAndType),
-        sort: [{attribute: "source-layer", descending: false}, {attribute: "minzoom", descending: false}]
+        query: this.searchByColorAndType.bind(this),
+        sort: [{ attribute: "source-layer", descending: false }, { attribute: "minzoom", descending: false }]
       }, put(dom.byId("search-results-node"), "div.style-layer-list"));
       this.searchResultsList.startup();
-      this.searchResultsList.on(".dgrid-cell.field-id:click", lang.hitch(this, this.idCellClick, this.searchResultsList));
-
+      this.searchResultsList.on(".dgrid-cell.field-id:click", this.idCellClick.bind(this, this.searchResultsList));
+      this.searchResultsList.on(".dgrid-cell.field-zoom:mouseover", this.zoomCellOver.bind(this, this.searchResultsList));
+      this.searchResultsList.on(".dgrid-cell.field-zoom:mouseout", this.zoomCellOut.bind(this, this.searchResultsList));
 
       // =========================================================================================== //
 
@@ -337,13 +390,13 @@ define([
       this.basemapColorList = new (declare([OnDemandList, DijitRegistry]))({
         sort: "luminosity",
         noDataMessage: "No Colors",
-        renderRow: lang.hitch(this, function (colorItem) {
+        renderRow: function (colorItem) {
           var colorNode = this._createColorNode(put("div"), colorItem.color, ".selectable.pallet-node");
-          on(colorNode, "click", lang.hitch(this, function (evt) {
+          on(colorNode, "click", function (evt) {
             this.setColorSearch(colorItem.color);
-          }));
+          }.bind(this));
           return colorNode;
-        })
+        }.bind(this)
       }, put(dom.byId("color-pallet-node"), "div"));
       this.basemapColorList.startup();
 
@@ -351,12 +404,13 @@ define([
       // =========================================================================================== //
 
       // SET VISIBILITY //
-      on(dom.byId("select-all-filter"), "click", lang.hitch(this, this._setVisibility, true));
-      on(dom.byId("select-none-filter"), "click", lang.hitch(this, this._setVisibility, false));
+      on(dom.byId("select-all-filter"), "click", this._setVisibility.bind(this, true));
+      on(dom.byId("select-none-filter"), "click", this._setVisibility.bind(this, false));
 
     },
 
     /**
+     * UPDATE ITEM VISIBILITY BASED ON LIST QUERY
      *
      * @param isVisible
      * @private
@@ -364,16 +418,43 @@ define([
     _setVisibility: function (isVisible) {
 
       var searchItems = this.styleLayersStore.query(this.styleLayersList.query);
-      var visibilityUpdates = array.map(searchItems, lang.hitch(this, function (otherItem) {
+      var visibilityUpdates = array.map(searchItems, function (otherItem) {
         return this._updateItemVisibility(otherItem, isVisible);
-      }));
-      all(visibilityUpdates).then(lang.hitch(this, function () {
+      }.bind(this));
+      all(visibilityUpdates).then(function () {
         this.applyBasemapStyle("Batch Visibility Update");
-      }), console.warn);
+      }.bind(this), console.warn);
 
     },
 
     /**
+     *
+     * @param list
+     * @param evt
+     */
+    zoomCellOver: function (list, evt) {
+      var cell = list.cell(evt);
+      if(cell.row) {
+        var item = cell.row.data;
+        var zoomLevelInfos = {
+          min: parseInt(item.minzoom || this.zoomRange.min, 10),
+          max: parseInt(item.maxzoom || this.zoomRange.max, 10)
+        };
+        Tooltip.show(lang.replace("<div style='width:120px;'>Zoom Levels: {min} to {max}</div>", zoomLevelInfos), cell.element);
+      }
+    },
+
+    /**
+     *
+     * @param list
+     * @param evt
+     */
+    zoomCellOut: function (list, evt) {
+      Tooltip.hide(list.cell(evt).element);
+    },
+
+    /**
+     * EDIT STYLE JSON DIRECTLY
      *
      * @param list
      * @param evt
@@ -387,26 +468,26 @@ define([
     },
 
     /**
-     *
+     *  CREATE STYLE LAYER TYPE STORE AND LIST
      */
     initStyleLayerTypesSelect: function () {
 
       this.styleLayerTypesStore = new Memory({
-        data: array.map(this.styleLayerTypes, lang.hitch(this, function (styleLayerType) {
-          return {id: styleLayerType, name: styleLayerType}
-        }))
+        data: array.map(this.styleLayerTypes, function (styleLayerType) {
+          return { id: styleLayerType, name: styleLayerType }
+        }.bind(this))
       });
 
       this.paintColorTypeSelect = registry.byId("style-layer-type-select");
-      this.paintColorTypeSelect.on("change", lang.hitch(this, function () {
+      this.paintColorTypeSelect.on("change", function () {
         this.searchResultsList.refresh();
-      }));
+      }.bind(this));
       this.paintColorTypeSelect.set("store", this.styleLayerTypesStore);
 
     },
 
     /**
-     *
+     * INITIALIZE FIND AND REPLACE
      */
     initializeFindReplace: function () {
 
@@ -418,16 +499,16 @@ define([
 
         // REPLACE TARGET NODE //
         this.replaceTargetColorNode = this._createColorNode(dom.byId("replace-target-color-node"), "#FF0000", ".selectable.replace-color-node", true);
-        on(this.replaceTargetColorNode, "click", lang.hitch(this, function (evt) {
+        on(this.replaceTargetColorNode, "click", function (evt) {
           var sourceColor = domAttr.get(this.replaceSourceColorNode, "data-color");
           var targetColor = domAttr.get(this.replaceTargetColorNode, "data-color");
-          this.selectColor(sourceColor, targetColor).then(lang.hitch(this, function (selectedColor) {
+          this.selectColor(sourceColor, targetColor).then(function (selectedColor) {
             this._updateColorNode(this.replaceTargetColorNode, selectedColor);
-          }), console.warn);
-        }));
+          }.bind(this), console.warn);
+        }.bind(this));
 
         // REPLACE COLOR //
-        registry.byId("replace-color-btn").on("click", lang.hitch(this, function (evt) {
+        registry.byId("replace-color-btn").on("click", function (evt) {
 
           // SOURCE AND TARGET COLORS //
           var sourceColor = domAttr.get(this.replaceSourceColorNode, "data-color");
@@ -436,13 +517,13 @@ define([
           // UPDATE ITEMS //
           var noSelection = (Object.keys(this.searchResultsList.selection).length === 0);
           var searchItems = this.styleLayersStore.query(this.searchResultsList.query);
-          var itemUpdates = array.map(searchItems, lang.hitch(this, function (item) {
+          var itemUpdates = array.map(searchItems, function (item) {
             return this._updateItemPaint(noSelection, item, sourceColor, targetColor);
-          }));
-          all(itemUpdates).then(lang.hitch(this, function () {
+          }.bind(this));
+          all(itemUpdates).then(function () {
             // APPLY STYLE //
-            this.applyBasemapStyle("Batch Color Find/Replace");
-          }), console.warn);
+            this.applyBasemapStyle("Batch Color Replace");
+          }.bind(this), console.warn);
 
           // UPDATE COLOR NODE AND SET AS SEARCH COLOR //
           this._updateColorNode(this.replaceSourceColorNode, targetColor);
@@ -451,13 +532,13 @@ define([
           // COLORS CHANGED //
           this.updateBasemapColorPalette(sourceColor, targetColor);
 
-        }));
+        }.bind(this));
       }
 
     },
 
-
     /**
+     * UPDATE ITEM
      *
      * @param noSelection
      * @param item
@@ -471,13 +552,13 @@ define([
 
       var isSelected = this.searchResultsList.isSelected(item.id);
       if(noSelection || isSelected) {
-        setTimeout(lang.hitch(this, function () {
+        setTimeout(function () {
           var paintProp = json.stringify(item.paint);
           var updatePaintProp = paintProp.replace(new RegExp(sourceColor, "gi"), targetColor.toUpperCase());
           item.paint = json.parse(updatePaintProp);
           this.styleLayersStore.put(item);
           deferred.resolve();
-        }), 0);
+        }.bind(this), 0);
       } else {
         deferred.resolve();
       }
@@ -486,30 +567,42 @@ define([
     },
 
     /**
-     *
+     * INITIALIZE UNDO MANAGER
      */
     initializeUndoManager: function () {
 
-      this.undoManager = new UndoManager({maxOperations: 100});
-      this.undoManager.on("change", lang.hitch(this, function (evt) {
+      // UNDO MANAGER //
+      this.undoManager = new UndoManager({ maxOperations: 100 });
+      // UNDO MANAGER EVENT //
+      this.undoManager.on("change", function (evt) {
         registry.byId("undo-btn").set("disabled", !this.undoManager.canUndo);
         registry.byId("redo-btn").set("disabled", !this.undoManager.canRedo);
-      }));
+      }.bind(this));
 
+      // UNDO/REDO BUTTON CLICKS //
       registry.byId("undo-btn").on("click", lang.hitch(this.undoManager, this.undoManager.undo));
       registry.byId("redo-btn").on("click", lang.hitch(this.undoManager, this.undoManager.redo));
 
-      registry.byId("undo-btn").on("mouseover", lang.hitch(this, function () {
+      // MOUSE OVER UNDO BUTTON //
+      registry.byId("undo-btn").on("mouseover", function () {
+        /*
+         var undoStackInfos = array.map(this.undoManager._historyStack, function (stackItem) {
+         return stackItem.label;
+         }.bind(this));
+         registry.byId("undo-btn").set("title", undoStackInfos.join("\n"));
+         */
         registry.byId("undo-btn").set("title", "Undo " + (this.undoManager.canUndo ? this.undoManager.peekUndo().label : ""));
-      }));
-      registry.byId("redo-btn").on("mouseover", lang.hitch(this, function () {
+      }.bind(this));
+
+      // MOUSE OVER REDO BUTTON //
+      registry.byId("redo-btn").on("mouseover", function () {
         registry.byId("redo-btn").set("title", "Redo " + (this.undoManager.canRedo ? this.undoManager.peekRedo().label : ""));
-      }));
+      }.bind(this));
 
     },
 
     /**
-     *
+     * INITIALE COLOR SELECTION DIALOG //
      */
     initializeColorSelectDialog: function () {
       if(!this.colorSelectorDialog) {
@@ -518,6 +611,7 @@ define([
     },
 
     /**
+     * USE COLOR SELECTION DIALOG TO GET NEW COLOR
      *
      * @param sourceColor
      * @param targetColor
@@ -527,15 +621,17 @@ define([
       var deferred = new Deferred();
 
       this.colorSelectorDialog.setColors(sourceColor, targetColor);
-      on.once(this.colorSelectorDialog, "execute", lang.hitch(this, function (evt) {
+      on.once(this.colorSelectorDialog, "execute", function (evt) {
         deferred.resolve(this.colorSelectorDialog.getSelectedColor());
-      }));
+      }.bind(this));
       this.colorSelectorDialog.show();
 
       return deferred.promise;
     },
 
     /**
+     *  INITIALIZE JSON EDITOR
+     *
      *  https://github.com/josdejong/jsoneditor/
      */
     initializeJsonEditor: function () {
@@ -563,7 +659,7 @@ define([
     },
 
     /**
-     *
+     * INITIALIZE USER VECTOR TILE SERVICE ITEM LIST
      */
     initializeBasemapItemList: function () {
 
@@ -575,22 +671,24 @@ define([
         // GET VECTOR TILE SERVICE ITEMS //
         this.portalUser.portal.queryItems({
           q: lang.replace(itemQuery, this.portalUser)
-        }).then(lang.hitch(this, function (queryResponse) {
+        }).then(function (queryResponse) {
           console.info("QUERY RESPONSE: ", queryResponse);
 
           // ITEM STORE //
-          this.userBasemapsItemsStore = new Observable(new Memory({data: queryResponse.results}));
+          this.userBasemapsItemsStore = new Observable(new Memory({ data: queryResponse.results }));
           // ITEM LIST //
           this.userBasemapsItemsList.set("store", this.userBasemapsItemsStore);
-          this.userBasemapsItemsList.select(this.userBasemapsItemsStore.data[0].id);
+          if(queryResponse.total > 0) {
+            this.userBasemapsItemsList.select(this.userBasemapsItemsStore.data[0].id);
+          }
 
-        }));
+        }.bind(this));
       }
 
     },
 
     /**
-     *
+     * INITIALIZE ABILITY TO COPY DEFAULT ESRI BASEMAP ITEM
      */
     initializeCopyDefaultEsriItem: function () {
 
@@ -604,17 +702,17 @@ define([
         // GET ESRI VECTOR TILE SERVICE ITEMS //
         this.portalUser.portal.queryItems({
           q: lang.replace(itemQuery, this.portalUser)
-        }).then(lang.hitch(this, function (queryResponse) {
+        }).then(function (queryResponse) {
           // ESRI BASEMAPS ITEM STORE //
-          this.esriBasemapsItemsStore = new Observable(new Memory({data: queryResponse.results}));
+          this.esriBasemapsItemsStore = new Observable(new Memory({ data: queryResponse.results }));
           registry.byId("create-copy-btn").set("disabled", false);
-        }));
+        }.bind(this));
 
         // CREATE COPY BUTTON CLICK //
-        registry.byId("create-copy-btn").on("click", lang.hitch(this, function () {
+        registry.byId("create-copy-btn").on("click", function () {
 
           // CREATE BASEMAP COPY DIALOG //
-          var createCopyDlg = new ConfirmDialog({title: "Copy Esri Vector Basemap Item"});
+          var createCopyDlg = new ConfirmDialog({ title: "Copy Esri Vector Basemap Item" });
           createCopyDlg.okButton.set("disabled", true);
           createCopyDlg.show();
 
@@ -624,11 +722,11 @@ define([
           var itemTitleInput = new ValidationTextBox({
             required: true,
             invalidMessage: "Item with this title already exists...",
-            validator: lang.hitch(this, function (value, constraints) {
-              var isValidTitle = value ? (this.userBasemapsItemsStore.query({title: value}).total === 0) : false;
+            validator: function (value, constraints) {
+              var isValidTitle = value ? (this.userBasemapsItemsStore.query({ title: value }).total === 0) : false;
               createCopyDlg.okButton.set("disabled", !isValidTitle);
               return isValidTitle;
-            })
+            }.bind(this)
           }, put(itemTitleNode, "div"));
 
           // DIALOG CONTENT //
@@ -639,38 +737,38 @@ define([
             store: this.esriBasemapsItemsStore,
             sort: "title",
             selectionMode: "single",
-            renderRow: lang.hitch(this, function (item) {
+            renderRow: function (item) {
               var basemapNode = put("div.basemap-node");
               put(basemapNode, "div.basemap-title-node", item.title);
-              put(basemapNode, "img.basemap-thumb-node", {src: item.thumbnailUrl});
+              put(basemapNode, "img.basemap-thumb-node", { src: item.thumbnailUrl });
               put(basemapNode, "div.basemap-snippet-node", item.snippet);
               //put(basemapNode, "fieldset.basemap-description-node", {legend: 'Description', innerHTML: item.description});
               return basemapNode;
-            })
+            }.bind(this)
           }, put(dialogContent, "div"));
           this.esriBasemapItemList.startup();
           // BASEMAP SELECTED //
-          this.esriBasemapItemList.on("dgrid-select", lang.hitch(this, function (evt) {
+          this.esriBasemapItemList.on("dgrid-select", function (evt) {
             createCopyDlg.selectedItem = evt.rows[0].data;
             itemTitleInput.set("value", this.suggestTitle(createCopyDlg.selectedItem.title));
-          }));
-          this.esriBasemapItemList.on("dgrid-deselect", lang.hitch(this, function (evt) {
+          }.bind(this));
+          this.esriBasemapItemList.on("dgrid-deselect", function (evt) {
             createCopyDlg.selectedItem = null;
             itemTitleInput.set("value", null);
-          }));
+          }.bind(this));
 
           // SUGGEST VALID ITEM TITLE //
-          this.suggestTitle = lang.hitch(this, function (initialTitle) {
+          this.suggestTitle = function (initialTitle) {
             var copyCount = 1;
             var newTitle = initialTitle + " - Copy";
-            while (this.userBasemapsItemsStore.query({title: newTitle}).total > 0) {
+            while (this.userBasemapsItemsStore.query({ title: newTitle }).total > 0) {
               newTitle = initialTitle + " - Copy" + (++copyCount);
             }
             return newTitle;
-          });
+          }.bind(this);
 
           // OK BUTTON CLICK //
-          createCopyDlg.on("execute", lang.hitch(this, function () {
+          createCopyDlg.on("execute", function () {
             if(createCopyDlg.selectedItem) {
               // ITEM TO COPY //
               var copyItem = createCopyDlg.selectedItem;
@@ -694,20 +792,19 @@ define([
                   extent: extentText,
                   thumbnailUrl: copyItem.thumbnailUrl
                 }
-              }).then(lang.hitch(this, function (addItemResponse) {
+              }).then(function (addItemResponse) {
                 if(addItemResponse.success) {
 
                   // GET COPY ITEM STYLE //
-                  var copyStyleRootUrl = lang.replace("{itemUrl}/resources/styles/root.json", copyItem);
                   esriRequest({
-                    url: copyStyleRootUrl,
-                    content: {f: "json"}
-                  }).then(lang.hitch(this, function (copyStyle) {
+                    url: lang.replace("{itemUrl}/resources/styles/root.json", copyItem),
+                    content: { f: "json" }
+                  }).then(function (copyStyle) {
 
                     // UPDATE STYLE TO USE USE GLYPHS AND SPRITES FROM COPY BASEMAP ITEM //
                     var newStyle = lang.mixin({}, copyStyle, {
-                      glyphs: lang.replace("{item.itemUrl}/resources/styles/{style.glyphs}", {item: copyItem, style: copyStyle}),
-                      sprite: lang.replace("{item.itemUrl}/resources/styles/{style.sprite}", {item: copyItem, style: copyStyle})
+                      glyphs: lang.replace("{item.itemUrl}/resources/styles/{style.glyphs}", { item: copyItem, style: copyStyle }),
+                      sprite: lang.replace("{item.itemUrl}/resources/styles/{style.sprite}", { item: copyItem, style: copyStyle })
                     });
 
                     // URL INFO //
@@ -726,29 +823,27 @@ define([
                         filename: "root.json",
                         text: json.stringify(newStyle)
                       }
-                    }, {usePost: true}).then(lang.hitch(this, function (addResourcesResponse) {
+                    }, { usePost: true }).then(function (addResourcesResponse) {
                       if(addResourcesResponse.success) {
-                        alert("Esri Vector Basemap copied...");
-
+                        this.displayMessageDialog("Esri Vector Basemap copied...");
                         // GET NEW BASEMAP ITEM //
-                        this.portalUser.getItem(addItemResponse.id).then(lang.hitch(this, function (newBasemapItem) {
+                        this.portalUser.getItem(addItemResponse.id).then(function (newBasemapItem) {
                           this.userBasemapsItemsStore.add(newBasemapItem);
-                        }), console.warn);
+                        }.bind(this), console.warn);
 
                       } else {
-                        alert("Unable to copy Esri Basemap");
+                        this.displayMessageDialog("Unable to copy Esri Basemap");
                         console.warn("Unable to copy Esri Basemap: ", addResourcesResponse);
                       }
-                    }));
-
-                  }));
+                    }.bind(this));
+                  }.bind(this));
                 } else {
                   console.warn("Unable to add new Basemap item: ", addItemResponse);
                 }
-              }));
+              }.bind(this));
             }
-          }));
-        }));
+          }.bind(this));
+        }.bind(this));
       } else {
         // NOT ARCGIS.COM //
         registry.byId("create-copy-btn").set("disabled", true);
@@ -756,6 +851,7 @@ define([
     },
 
     /**
+     * GET USER ITEM - MAKE SURE WE GET ITEM DIRECTLY FROM PORTAL USER INSTEAD OF SEARCH
      *
      * @param item
      * @returns {*}
@@ -766,30 +862,31 @@ define([
       if(item.userItemUrl) {
         deferred.resolve(item);
       } else {
-        this.portalUser.getItem(item.id).then(lang.hitch(this, function (userItem) {
+        this.portalUser.getItem(item.id).then(function (userItem) {
           // UPDATE USER BASEMAP ITEMS STORE //
           this.userBasemapsItemsStore.put(userItem);
           deferred.resolve(userItem);
-        }));
+        }.bind(this));
       }
       return deferred.promise;
     },
 
     /**
+     * USER VECTOR TILE SERVICE ITEM SELECTED
      *
      * @param item
      */
     itemSelected: function (item) {
 
       // GET ITEM VIA PORTAL USER //
-      this._getUserItem(item).then(lang.hitch(this, function (userItem) {
+      this._getUserItem(item).then(function (userItem) {
 
         // SELECTED ITEM //
         this.selectedItem = userItem;
 
         // DISPLAY VECTOR BASEMAP //
         if(!this.map) {
-          // CREATE MAP //
+          // ONLY CREATE MAP ONCE //
           this.map = new Map("map-node", {
             sliderOrientation: "horizontal",
             zoom: 1
@@ -799,12 +896,12 @@ define([
           domClass.remove(dom.byId("zoom-node"), "dijitHidden");
 
           // MAP ZOOM-END EVENT //
-          this.map.on("zoom-end", lang.hitch(this, function (evt) {
+          this.map.on("zoom-end", function (evt) {
             dom.byId("zoom-node").innerHTML = lang.replace("Zoom: {level}", evt);
             if(this.styleLayersList && registry.byId("current-zoom-chk").get("checked")) {
               this.styleLayersList.refresh();
             }
-          }));
+          }.bind(this));
 
           // HOME BUTTON //
           this.homeButton = new HomeButton({
@@ -828,19 +925,26 @@ define([
         // GET STYLE //
         esriRequest({
           url: lang.replace("{itemUrl}/resources/styles/root.json", this.selectedItem),
-          content: {f: "json"}
-        }).then(lang.hitch(this, function (style) {
+          content: { f: "json" }
+        }).then(function (style) {
+          console.info("root.json", style);
 
           // VECTOR BASEMAP LAYER //
-          this.vectorBasemapLayer = new VectorTileLayer(this._cloneStyle(style));
-          this.vectorBasemapLayer.on("error", lang.hitch(this, function (evt) {
+          // - THERE ARE SEVERAL WAYS TO CREATE VECTORTILELAYER...
+          //   HERE WE PASS IN THE STYLE DIRECTLY INTO THE CONSTRUCTOR
+          this.vectorBasemapLayer = new VectorTileLayer(this._cloneVectorTileLayerStyle(style));
+          this.vectorBasemapLayer.on("error", function (evt) {
             console.warn("vectorBasemapLayer.error: ", evt.error);
-          }));
-          this.vectorBasemapLayer.on("load", lang.hitch(this, function () {
+          }.bind(this));
+          this.vectorBasemapLayer.on("load", function () {
+
+            this.vectorBasemapLayer.on("style-change", function (event) {
+              console.info("style-change: ", event);
+            });
 
             // VECTOR BASEMAP STYLES //
-            this.vectorBasemapStylePrevious = this._cloneStyle(style);
-            this.vectorBasemapStyle = this._cloneStyle(style);
+            this.vectorBasemapStylePrevious = this._cloneVectorTileLayerStyle(style);
+            this.vectorBasemapStyle = this._cloneVectorTileLayerStyle(style);
 
             // DISPLAY STYLE LAYERS //
             this.displayStyleLayers(this.vectorBasemapStyle.layers);
@@ -853,22 +957,24 @@ define([
             //this.fullJsonEditor.set(this.vectorBasemapStyle, "", true);
             //dom.byId("json-editor-node").innerHTML = "";
             //put(dom.byId("json-editor-node"), "pre", json.stringify(this.vectorBasemapStyle, null, "  "));
-          }));
+          }.bind(this));
           this.map.addLayers([this.vectorBasemapLayer]);
 
 
-        }), console.warn);
-      }), console.warn);
+        }.bind(this), console.warn);
+      }.bind(this), console.warn);
 
     },
 
     /**
+     * CLONE A STYLE
+     * - REMOVE _ssl PROPERTY FROM CLONE
      *
      * @param style
      * @returns {*}
      * @private
      */
-    _cloneStyle: function (style) {
+    _cloneVectorTileLayerStyle: function (style) {
       var clonedStyle = lang.clone(style);
       if(clonedStyle.hasOwnProperty("_ssl")) {
         delete clonedStyle._ssl;
@@ -877,7 +983,7 @@ define([
     },
 
     /**
-     * SEARCH
+     * INITIALIZE SEARCH WIDGET
      */
     initSearch: function () {
 
@@ -896,7 +1002,8 @@ define([
     },
 
     /**
-     *
+     * INITIALIZE COLOR PICKER MAP TOOL
+     * - SEE CONSTRUCTOR FOR ADDITIONAL DETAILS...
      */
     initializeEyeTool: function () {
 
@@ -907,9 +1014,10 @@ define([
       this.eyeTool = registry.byId("eye-tool");
 
       // MOUSE MOVE //
-      this.eyeTool.mapClickHandle = on.pausable(this.map, "click", lang.hitch(this, function (evt) {
+      this.eyeTool.mapClickHandle = on.pausable(this.map, "click", function (evt) {
 
         var glContext = this.vectorBasemapLayer.gl.painter.gl;
+
         var pixelValues = new Uint8Array(4);
         glContext.readPixels(evt.screenPoint.x, (this.map.height - evt.screenPoint.y), 1, 1, glContext.RGBA, glContext.UNSIGNED_BYTE, pixelValues);
         var screenColor = new Color([pixelValues[0], pixelValues[1], pixelValues[2], pixelValues[3] / 255]);
@@ -918,11 +1026,11 @@ define([
         this._updateColorNode(this.replaceSourceColorNode, screenColorHex);
         this.setColorSearch(screenColorHex);
 
-      }));
+      }.bind(this));
       this.eyeTool.mapClickHandle.pause();
 
       // EYE TOOL TOGGLE //
-      this.eyeTool.on("change", lang.hitch(this, function (checked) {
+      this.eyeTool.on("change", function (checked) {
         if(checked && this.vectorBasemapLayer) {
           this.map.setMapCursor("crosshair");
           this.eyeTool.mapClickHandle.resume();
@@ -933,11 +1041,12 @@ define([
           this.map.setMapCursor("default");
           this.eyeTool.mapClickHandle.pause();
         }
-      }));
+      }.bind(this));
 
     },
 
     /**
+     * UPDATE ITEM VISIBILITY
      *
      * @param item
      * @param isVisible
@@ -947,43 +1056,44 @@ define([
     _updateItemVisibility: function (item, isVisible) {
       var deferred = new Deferred();
 
-      setTimeout(lang.hitch(this, function () {
+      setTimeout(function () {
         var styleVisibility = (isVisible ? this.LAYOUT_VISIBILITY.VISIBLE : this.LAYOUT_VISIBILITY.NONE);
-        item.layout = lang.mixin(item.layout || {}, {visibility: styleVisibility});
+        item.layout = lang.mixin(item.layout || {}, { visibility: styleVisibility });
         this.styleLayersStore.put(item);
         deferred.resolve();
-      }), 0);
+      }.bind(this), 0);
 
       return deferred.promise;
     },
 
     /**
-     *
+     * DEFINE GRID COLUMNS FOR STYLE OBJECTS
      */
     getStyleColumns: function (displayAllColumns) {
 
+      // SOURCE RELATED COLUMNS //
       var sourceColumns = [
         {
-          label: "vis",
+          label: "",
           field: "visibility",
-          get: lang.hitch(this, function (item) {
+          get: function (item) {
             if(item.layout && item.layout.visibility) {
               return (item.layout.visibility === this.LAYOUT_VISIBILITY.VISIBLE);
             } else {
               return true;
             }
-          }),
-          renderCell: lang.hitch(this, function (item, value, node, options) {
+          }.bind(this),
+          renderCell: function (item, value, node, options) {
             // VISIBILITY CHECKBOX //
-            var visCheckBox = new CheckBox({checked: value});
-            visCheckBox.on("change", lang.hitch(this, function (isChecked) {
-              this._updateItemVisibility(item, isChecked).then(lang.hitch(this, function () {
+            var visCheckBox = new CheckBox({ checked: value });
+            visCheckBox.on("change", function (isChecked) {
+              this._updateItemVisibility(item, isChecked).then(function () {
                 this.applyBasemapStyle("Visibility Update");
-              }), console.warn);
-            }));
+              }.bind(this), console.warn);
+            }.bind(this));
             visCheckBox.startup();
             return visCheckBox.domNode;
-          })
+          }.bind(this)
         },
         {
           label: "source-layer",
@@ -991,6 +1101,7 @@ define([
         }
       ];
 
+      // ITEM RELATED COLUMNS //
       var itemColumns = [
         {
           label: "id",
@@ -1007,9 +1118,9 @@ define([
             discreteValues: this.zoomRange.count,
             showButtons: false
           },
-          get: lang.hitch(this, function (item) {
+          get: function (item) {
             return [parseInt(item.minzoom || this.zoomRange.min, 10), parseInt(item.maxzoom || this.zoomRange.max, 10)];
-          })
+          }.bind(this)
         }),
         {
           label: "type",
@@ -1017,25 +1128,28 @@ define([
         }
       ];
 
+      // LAYOUT RELATED COLUMNS //
       var layoutColumns = [
         {
           label: "text-font",
           field: "text-font",
-          get: lang.hitch(this, function (item) {
+          get: function (item) {
             return item.layout ? item.layout["text-font"] || "" : "";
-          })
+          }.bind(this)
         }
       ];
 
-      var paintColumns = array.map(this.paintColorTypes, lang.hitch(this, function (paintColorType) {
+      // PAINT RELATED COLUMNS //
+      var paintColumns = array.map(this.paintColorTypes, function (paintColorType) {
         return {
           label: paintColorType.replace(/-color/, ""),
           field: paintColorType,
-          get: lang.hitch(this, this._getPaintValue, paintColorType),
-          renderCell: lang.hitch(this, this.renderPaintCell, paintColorType)
+          get: this._getPaintValue.bind(this, paintColorType),
+          renderCell: this.renderPaintCell.bind(this, paintColorType)
         }
-      }));
+      }.bind(this));
 
+      // RETURN LIST OF COLUMNS //
       if(displayAllColumns) {
         return sourceColumns.concat(itemColumns, paintColumns); //, layoutColumns);
       } else {
@@ -1044,37 +1158,43 @@ define([
     },
 
     /**
+     * USE NEW STYLE LAYERS IN ALL RELEVANT UI PLACES
      *
      * @param styleLayers
      */
     displayStyleLayers: function (styleLayers) {
 
       // BASEMAP COLORS STORE //
-      this.basemapColorsStore = new Observable(new Memory({data: []}));
+      this.basemapColorsStore = new Observable(new Memory({ data: [] }));
 
       // CREATE COLOR STORE FOR ALL COLORS IN STYLE  //
-      array.forEach(styleLayers, lang.hitch(this, function (styleLayer) {
-        var paintInfo = json.stringify(styleLayer["paint"]);
-        var colorMatches = paintInfo.match(this.hexColorRegEx);
-        array.forEach(colorMatches, lang.hitch(this, function (colorMatch) {
-          var hexColor = colorMatch.toUpperCase();
-          if(!this.basemapColorsStore.get(hexColor)) {
-            this.basemapColorsStore.add({id: hexColor, color: hexColor, luminosity: (new Color(hexColor)).toHsl().l});
-          }
-        }));
-      }));
+      array.forEach(styleLayers, function (styleLayer) {
+        if(styleLayer.hasOwnProperty("paint")) { // 'paint' is optional...
+          var paintInfo = json.stringify(styleLayer["paint"]);
+          var colorMatches = paintInfo.match(this.hexColorRegEx);
+          array.forEach(colorMatches, function (colorMatch) {
+            var hexColor = colorMatch.toUpperCase();
+            if(!this.basemapColorsStore.get(hexColor)) {
+              this.basemapColorsStore.add({ id: hexColor, color: hexColor, luminosity: (new Color(hexColor)).toHsl().l });
+            }
+          }.bind(this));
+        } else {
+          console.warn("No PAINT in style layer: ", json.stringify(styleLayer));
+        }
+      }.bind(this));
 
       // COLOR SELECTOR DIALOG //
       this.colorSelectorDialog.setBasemapColorStore(this.basemapColorsStore);
+
       // BASEMAP COLOR PALETTE LIST //
       this.basemapColorList.set("store", this.basemapColorsStore);
 
-
       // STYLE LAYERS STORE //
-      this.styleLayersStore = new Observable(new Memory({data: styleLayers}));
+      this.styleLayersStore = new Observable(new Memory({ data: styleLayers }));
 
       // ALL STYLES LIST //
       this.styleLayersList.set("store", this.styleLayersStore);
+
       // SOURCE-LAYER LIST //
       this.sourceLayerList.set("store", this.styleLayersStore);
 
@@ -1091,6 +1211,9 @@ define([
     },
 
     /**
+     * UPDATE BASEMAP COLOR PALETTE WHEN COLOR HAS BEEN REPLACED
+     *  - REMOVE COLOR IF NO OTHER STYLE IS USING THE OLD COLOR
+     *  - ADD COLOR IF NEW COLOR IS NOT IN THE CURRENT BASEMAP COLOR LIST
      *
      * @param sourceColor
      * @param targetColor
@@ -1098,21 +1221,25 @@ define([
      */
     updateBasemapColorPalette: function (sourceColor, targetColor) {
 
+      // HEX COLORS VALUES //
       var sourceColorHex = sourceColor.toUpperCase();
       var targetColorHex = targetColor.toUpperCase();
 
       // ARE THERE OTHER ITEMS STILL USING THIS COLOR? //
-      var itemsWithColor = this.styleLayersStore.query(lang.hitch(this, this.searchByColor, sourceColorHex));
+      var itemsWithColor = this.styleLayersStore.query(this.searchByColor.bind(this, sourceColorHex));
       if(itemsWithColor.length === 0) {
         this.basemapColorsStore.remove(sourceColorHex);
       }
-      // IS THIS NEW COLOR NOT IN IN BASEMAP COLOR PALETTE? //
+      // IS THIS NEW COLOR NOT IN BASEMAP COLOR PALETTE? //
       if(!this.basemapColorsStore.get(targetColorHex)) {
-        this.basemapColorsStore.add({id: targetColorHex, color: targetColorHex, luminosity: (new Color(targetColorHex)).toHsl().l});
+        this.basemapColorsStore.add({ id: targetColorHex, color: targetColorHex, luminosity: (new Color(targetColorHex)).toHsl().l });
       }
     },
 
     /**
+     * CREATE A COLOR NODE
+     *  - A COLOR NODE IS A DOM NODE WITH THE STYLE BACKGROUND OF THE COLOR AND
+     *    A NODE ATTRIBUTE CALLED 'data-color' WITH A VALUE OF THE COLOR AS HEX
      *
      * @param parent
      * @param colorStr
@@ -1122,7 +1249,7 @@ define([
      * @private
      */
     _createColorNode: function (parent, colorStr, classNames, addColorName) {
-      var colorNode = put(parent, "span.color-node" + (classNames || ""), {title: colorStr});
+      var colorNode = put(parent, "span.color-node" + (classNames || ""), { title: colorStr });
       if(addColorName) {
         colorNode.nameNode = put(parent, "span.color-name-node", colorStr);
       }
@@ -1134,6 +1261,7 @@ define([
     },
 
     /**
+     * UPDATE COLOR NODE
      *
      * @param colorNode
      * @param colorStr
@@ -1151,6 +1279,7 @@ define([
     },
 
     /**
+     * GET PAINT PROPERTY OF STYLE LAYER ITEM
      *
      * @param property
      * @param item
@@ -1166,6 +1295,8 @@ define([
     },
 
     /**
+     * RENDER PAINT PROPERTY CELL NODE
+     *  - A COLOR CELL REPRESENTS THE COLOR OF A PAINT PROPERTY OF A STYLE LAYER ITEM
      *
      * @param paintProperty
      * @param item
@@ -1179,9 +1310,9 @@ define([
         var paintNode = put("div");
 
         if(value.stops) {
-          array.forEach(value.stops, lang.hitch(this, function (stopInfo, stopIndex) {
+          array.forEach(value.stops, function (stopInfo, stopIndex) {
             this._createColorCell(paintNode, stopInfo, item, paintProperty, stopIndex);
-          }));
+          }.bind(this));
         } else {
           this._createColorCell(paintNode, value, item, paintProperty);
         }
@@ -1191,6 +1322,8 @@ define([
     },
 
     /**
+     * CREATE COLOR CELL
+     *  - A COLOR CELL REPRESENTS THE COLOR OF A PAINT PROPERTY OF A STYLE LAYER ITEM
      *
      * @param parentNode
      * @param colorInfo
@@ -1211,7 +1344,7 @@ define([
 
       var storeColor = this.basemapColorsStore.get(colorStr);
       var luminosity = storeColor ? storeColor.luminosity : 101;
-      console.assert(luminosity !== 101, "luminosity -- ", colorStr);
+      //console.assert(luminosity !== 101, "luminosity -- ", colorStr);
 
       var colorCell = put(parentNode, "div.color-cell", label);
       if(colorStr.search(this.hexColorRegEx) > -1) {
@@ -1220,9 +1353,9 @@ define([
       }
 
       // COLOR CELL CLICK //
-      on(colorCell, "click", lang.hitch(this, function (evt) {
+      on(colorCell, "click", function (evt) {
         // SELECT COLOR //
-        this.selectColor(colorStr, colorStr).then(lang.hitch(this, function (selectedColor) {
+        this.selectColor(colorStr, colorStr).then(function (selectedColor) {
           // REPLACE COLOR //
           if(subIndex != null) {
             item.paint[paintProperty].stops[subIndex][1] = selectedColor;
@@ -1234,14 +1367,15 @@ define([
 
           // COLORS CHANGED //
           this.updateBasemapColorPalette(colorStr, selectedColor);
-        }));
+        }.bind(this));
 
-      }));
+      }.bind(this));
 
       return colorCell;
     },
 
     /**
+     * SET THE SEARCH COLOR
      *
      * @param colorHex
      * @private
@@ -1252,6 +1386,7 @@ define([
     },
 
     /**
+     * SEARCH BY COLOR LIST FILTER
      *
      * @param searchColor
      * @param item
@@ -1272,6 +1407,7 @@ define([
     },
 
     /**
+     * SEARCH BY COLOR AND TYPE LIST FILTER
      *
      * @param item
      * @returns {boolean}
@@ -1298,6 +1434,8 @@ define([
     },
 
     /**
+     * SEARCH LIST FILTER
+     *  - NOTE: CURRENTLY NOT USED...
      *
      * @param item
      * @returns {boolean}
@@ -1349,6 +1487,7 @@ define([
     },
 
     /**
+     * DISPLAY STYLE LAYER JSON EDITOR
      *
      * @param item
      */
@@ -1362,16 +1501,50 @@ define([
       this.jsonEditor.set(item, item.id, true);
       this.styleLayerEditorDialog.show();
 
-      this.styleLayerEditorDialogExecutteHandle = on.once(this.styleLayerEditorDialog, "execute", lang.hitch(this, function () {
+      this.styleLayerEditorDialogExecutteHandle = on.once(this.styleLayerEditorDialog, "execute", function () {
         var updatedItem = this.jsonEditor.get();
         this.styleLayersStore.put(updatedItem);
         this.applyBasemapStyle("Style JSON Edit");
-      }));
+      }.bind(this));
 
     },
 
     /**
      *
+     * @param updateType
+     * @param undoItems
+     * @param redoItems
+     */
+    /*updateBasemapStyle: function (updateType, undoItems, redoItems) {
+     if(this.undoManager) {
+     // ALLOW UNDO/REDO OPERATION //
+     var styleUpdateOperation = new StyleUpdate({
+     label: updateType || StyleUpdate.defaultLabel,
+     store: this.styleLayersStore,
+     undoItems: undoItems,
+     redoItems: redoItems,
+     updateStyleCallback: function () {
+
+     this.vectorBasemapStyle.layers = this.styleLayersStore.query();
+
+     // SET STYLE OF VECTOR BASEMAP //
+     this.vectorBasemapLayer.setStyle(this._cloneVectorTileLayerStyle(this.vectorBasemapStyle));
+     // DISPLAY STYLE LAYERS //
+     this.displayStyleLayers(this.vectorBasemapStyle.layers);
+
+     }.bind(this)
+     });
+     this.undoManager.add(styleUpdateOperation);
+     }
+
+     },*/
+
+    /**
+     * APPLY BASEMAP STYLE
+     *  - CREATE APPLYSTYLE OPERATION AND ADD TO UNDO MANAGER
+     *  - CLONE PREVIOUS AND CURRENT STYLES
+     *  - UPDATE VECTOR TILE SERVICE LAYER WITH CURRENT STYLE
+     *  - UPDATE UI ELEMENTS WITH NEW STYLE
      */
     applyBasemapStyle: function (operationName) {
 
@@ -1382,23 +1555,23 @@ define([
           var applyStyleOperation = new ApplyStyle({
             label: operationName || ApplyStyle.defaultLabel,
             layer: this.vectorBasemapLayer,
-            undoStyle: this._cloneStyle(this.vectorBasemapStylePrevious),
-            redoStyle: this._cloneStyle(this.vectorBasemapStyle),
-            applyStyleCallback: lang.hitch(this, this.displayStyleLayers)
+            undoStyle: this._cloneVectorTileLayerStyle(this.vectorBasemapStylePrevious),
+            redoStyle: this._cloneVectorTileLayerStyle(this.vectorBasemapStyle),
+            applyStyleCallback: this.displayStyleLayers.bind(this)
           });
           this.undoManager.add(applyStyleOperation);
         }
 
         // UPDATE STYLES //
-        this.vectorBasemapStylePrevious = this._cloneStyle(this.vectorBasemapStyle);
-        this.vectorBasemapStyle = this._cloneStyle(this.vectorBasemapStyle);
+        this.vectorBasemapStylePrevious = this._cloneVectorTileLayerStyle(this.vectorBasemapStyle);
+        this.vectorBasemapStyle = this._cloneVectorTileLayerStyle(this.vectorBasemapStyle);
 
         //this.fullJsonEditor.set(this.vectorBasemapStyle, "", true);
         //dom.byId("json-editor-node").innerHTML = "";
         //put(dom.byId("json-editor-node"), "pre", json.stringify(this.vectorBasemapStyle, null, "  "));
 
         // SET STYLE OF VECTOR BASEMAP //
-        this.vectorBasemapLayer.setStyle(this._cloneStyle(this.vectorBasemapStyle));
+        this.vectorBasemapLayer.setStyle(this._cloneVectorTileLayerStyle(this.vectorBasemapStyle));
         // DISPLAY STYLE LAYERS //
         this.displayStyleLayers(this.vectorBasemapStyle.layers);
 
@@ -1406,13 +1579,13 @@ define([
     },
 
     /**
-     *
+     * UPDATE SELECTED USER VECTOR TILE SERVICE ITEM WITH CURRENT STYLE
      */
-    updateBasemapStyle: function () {
+    saveStyleChangesToUserItem: function () {
 
       if(this.selectedItem && this.vectorBasemapLayer) {
         // NEW STYLE //
-        var newStyle = this.vectorBasemapStyle;
+        var newStyle = this._cloneVectorTileLayerStyle(this.vectorBasemapStyle);
 
         // REMOVE PREVIOUS STYLE //
         esriRequest({
@@ -1421,7 +1594,7 @@ define([
             f: "json",
             resource: "styles/root.json"
           }
-        }, {usePost: true}).then(lang.hitch(this, function (removeResponse) {
+        }, { usePost: true }).then(function (removeResponse) {
           if(removeResponse.success) {
             // ADD NEW STYLE //
             esriRequest({
@@ -1432,24 +1605,35 @@ define([
                 filename: "root.json",
                 text: json.stringify(newStyle)
               }
-            }, {usePost: true}).then(function (addResponse) {
+            }, { usePost: true }).then(function (addResponse) {
               if(addResponse.success) {
-                alert("Vector basemap style updated");
+                this.displayMessageDialog("Vector basemap style updated");
               } else {
-                alert("Unable to add new style");
+                this.displayMessageDialog("Unable to add new style");
                 console.warn("Unable to add new style", addResponse);
               }
-            });
+            }.bind(this));
           } else {
-            alert("Unable to remove previous style");
+            this.displayMessageDialog("Unable to remove previous style");
             console.warn("Unable to remove previous style", removeResponse);
           }
-        }));
+        }.bind(this));
       }
 
     },
 
     /**
+     * DISPLAY MESSAGE IN DIALOG
+     *
+     * @param message
+     */
+    displayMessageDialog: function (message) {
+      (new ConfirmDialog({ title: MainApp.appName, content: message })).show();
+    },
+
+    /**
+     * DISPLAY STYLE LAYER DETAILS
+     *  - NOTE: CURRENTLY NOT USED...
      *
      * @param style
      * @private
@@ -1490,33 +1674,7 @@ define([
   };
 
   MainApp.appName = "Vector Basemap Style Editor";
-  MainApp.version = "0.1.0";
+  MainApp.version = "0.1.1";
 
   return MainApp;
 });
-
-
-/*
- - From: https://www.mapbox.com/mapbox-gl-style-spec/#types-color
- - Does new Color(?) correctly work for all these?
- {
- "line-color": "#ff0",
- "line-color": "#ffff00",
- "line-color": "rgb(255, 255, 0)",
- "line-color": "rgba(255, 255, 0, 1)",
- "line-color": "hsl(100, 50%, 50%)",
- "line-color": "hsla(100, 50%, 50%, 1)",
- "line-color": "yellow"
- }
-
- background-color
- fill-color
- fill-outline-color
- line-color
- icon-color
- icon-halo-color
- text-color
- text-halo-color
- circle-color
-
- */

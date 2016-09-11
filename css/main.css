@@ -8,10 +8,6 @@ html, body {
   color       : #444;
 }
 
-.esriRTL label {
-  /*Example of a rule that will be applied if the app is viewed in a browser with a RTL locale like Hebrew or Arabic.*/
-}
-
 /* MAIN APP MESSAGES =========================================================== */
 .app-error .loading-message {
   background  : url(../images/error.png) no-repeat top center;
@@ -32,7 +28,7 @@ html, body {
   padding          : 40px;
   text-align       : center;
   font-size        : 2em;
-  background-color : rgba(51, 102, 153, 0.8);
+  background-color : rgba(25, 111, 166, 0.8);
 }
 
 .message-node .small-text {
@@ -54,21 +50,26 @@ html, body {
 /* MAIN APP MESSAGES =========================================================== */
 
 #main-container {
-  width  : 100%;
-  height : 100%;
-  margin : 0;
-  /*padding : 0;*/
+  width   : 100%;
+  height  : 100%;
+  margin  : 0;
+  padding : 0;
+}
+
+#main-container *,
+.dijitDialog * {
+  outline : none !important;
 }
 
 #main-container .dijitContentPane {
-  /*border : none !important;*/
+  background-color : #fff;
 }
 
 #main-top-pane {
   line-height      : 2.2em;
   overflow         : hidden;
   color            : #fff;
-  background-color : #336699;
+  background-color : #196fa6 !important;
 }
 
 #app-title {
@@ -77,7 +78,6 @@ html, body {
 }
 
 #app-sub-title {
-  font-size  : smaller;
   font-style : italic;
   margin     : 0 30px;
 }
@@ -103,9 +103,8 @@ html, body {
 #style-list-node,
 #color-list-node,
 #search-results-node {
-  width     : 100%;
-  height    : 100%;
-  font-size : smaller !important;
+  width  : 100%;
+  height : 100%;
 }
 
 #main-right-pane {
@@ -143,15 +142,8 @@ html, body {
   padding : 0 !important;
 }
 
-.claro .dijitToolbar .dijitButton .dijitButtonNode,
-.claro .dijitToolbar .dijitButtonActive .dijitButtonNode,
-.claro .dijitToolbar .dijitButtonDisabled .dijitButtonNode,
-.claro .dijitToolbar .dijitButtonHover .dijitButtonNode {
-  padding : 4px !important;
-}
-
-.claro .dijitToolbar .dijitButtonHover .dijitButtonNode {
-  background : #4183c4 !important;
+.dijitToolbar {
+  border : none !important;
 }
 
 .dgrid {
@@ -188,7 +180,7 @@ html, body {
 
 #full-list-node .dgrid-row,
 #search-results-node .dgrid-row {
-  padding : 5px 0;
+  /*padding : 5px 0;*/
 }
 
 #item-list-node .dgrid-row {
@@ -199,14 +191,6 @@ html, body {
   height         : 100%;
   border         : none !important;
   vertical-align : middle !important;
-}
-
-.dgrid-highlight {
-  background-color : rgba(255, 255, 112, 0.75);
-}
-
-.dgrid-selected {
-  /*background-color : #bfd6eb !important;*/
 }
 
 .field-id,
@@ -228,32 +212,24 @@ html, body {
   width : 120px !important;
 }
 
-.field-zoom,
-.field-minzoom,
-.field-maxzoom {
-  width          : 120px !important;
-  text-align     : center !important;
+.field-zoom {
+  width      : 120px !important;
+  text-align : center !important;
+  cursor     : default;
+}
+
+.field-zoom .dijitSlider {
   pointer-events : none;
 }
 
-.claro .dijitSliderImageHandleH {
+.dijitSliderImageHandleH {
   opacity : 0.0;
-  /*background-image : url("../images/sliderThumbs.png");*/
 }
 
-.claro .dijitSliderHover .dijitSliderImageHandleH {
-  /*opacity : 1.0;*/
-}
-
-.claro .dijitSlider .dijitSliderProgressBar {
-  background : #336699;
-  height     : 12px;
-  overflow   : visible;
-  margin-top : -4px;
-}
-
-.claro .dijitSliderBumper {
-  display : none !important;
+.dijitSlider .dijitSliderProgressBar {
+  background   : #196fa6 !important;
+  border-left  : solid 2px darkblue !important;
+  border-right : solid 2px darkblue !important;
 }
 
 .field-type {
@@ -305,76 +281,16 @@ html, body {
 }
 
 #eye-tool-node {
-  z-index  : 99;
-  position : absolute;
-  top      : 2px;
-  left     : 115px
-}
-
-#eye-tool-node .dijitButtonText {
-  padding : 4px;
-}
-
-.dijitTitlePane * {
-  /*border : none !important;*/
-  outline : none !important;
-}
-
-.claro .dijitTitlePaneTitle {
-  background-image : none !important;
-  border           : 1px solid #fff !important;
-  font-weight      : bolder;
-}
-
-.claro .dijitTitlePaneTitleHover,
-.claro .dijitTitlePaneTitleOpen,
-.claro .dijitTitlePaneTitleFixedOpen {
-  color            : #fff;
-  background-color : #336699;
-  border-color     : #336699;
-}
-
-.claro .dijitTitlePaneContentOuter {
-  border : none !important;
+  z-index    : 99;
+  position   : absolute;
+  top        : 7px;
+  left       : 115px;
+  box-shadow : 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 .jsoneditor-node {
   width  : 800px;
   height : 500px;
-}
-
-.dijitDialogTitleBar,
-.dijitButtonNode {
-  background : #336699 !important;
-  border     : none !important;
-}
-
-.dijitButtonDisabled .dijitButtonNode {
-  background : #ccc !important;
-}
-
-.dijitDialogTitle,
-.dijitButtonText {
-  color : #fff !important;
-}
-
-.dijitTab {
-  color : #878787 !important;
-}
-
-.dijitTabHover,
-.dijitTabActive {
-  color      : #444 !important;
-  background : #bfd6eb !important;
-}
-
-.dijitTabChecked {
-  color      : #fff !important;
-  background : #336699 !important;
-}
-
-.dijitTabChecked * {
-  outline : none !important;
 }
 
 #json-editor-node {
@@ -395,9 +311,8 @@ html, body {
   height : auto !important;
 }
 
-.claro .dojoxCheckedMultiSelect .dojoxCheckedMultiSelectWrapper {
-  background-color : #fff;
-  border           : none;
+.dojoxCheckedMultiSelect .dojoxCheckedMultiSelectWrapper {
+  border : none;
 }
 
 .dojoxCheckedMultiSelect .dojoxCheckedMultiSelectWrapper {
@@ -405,29 +320,14 @@ html, body {
   overflow-y : auto;
 }
 
-.claro .dojoxCheckedMultiSelectHover .dojoxCheckedMultiSelectWrapper {
+.dojoxCheckedMultiSelectHover .dojoxCheckedMultiSelectWrapper {
   background : none !important;
   border     : none !important;
-}
-
-#color-selector-container {
-  width  : 725px;
-  height : 225px;
-}
-
-#color-selector-custom-container {
-  width : 350px;
 }
 
 #search-toolbar {
   line-height    : 3em;
   vertical-align : middle;
-}
-
-.dijitColorPalette,
-.dojoxColorPicker {
-  background : none !important;
-  border     : none !important;
 }
 
 .replace-color-pane {
@@ -454,18 +354,13 @@ html, body {
 }
 
 .color-node.selectable {
-  cursor       : pointer;
-  border-color : #555;
-  box-shadow   : 0 0 4px #ddd;
+  cursor : pointer;
+  border : 1px solid rgba(0, 0, 0, 0.5);
 }
 
 .color-node.selectable:hover {
   border-color : #fff;
   box-shadow   : 0 0 6px #ddd;
-}
-
-.color-node.selected {
-  border-color : red;
 }
 
 .color-name-node {
@@ -521,16 +416,22 @@ html, body {
 }
 
 .clear-node {
-  float      : right;
-  cursor     : pointer;
-  width      : 24px;
-  height     : 24px;
-  background : url(../images/GenericDeleteRed32.png) no-repeat center / contain;
+  position    : absolute;
+  top         : 20px;
+  right       : 5px;
+  cursor      : pointer;
+  font-size   : larger;
+  font-weight : bolder;
+  color       : darkred;
+}
+
+.clear-node:hover {
+  color : red;
 }
 
 .esriSimpleSliderTL {
-  left : 5px;
-  top  : 5px;
+  left : 5px !important;
+  top  : 5px !important;
 }
 
 #home-button-node {
@@ -538,11 +439,6 @@ html, body {
   position : absolute;
   top      : 5px;
   left     : 75px;
-}
-
-#home-button-node .home {
-  background-color : #336699;
-!important;
 }
 
 #search-node {
@@ -557,10 +453,10 @@ html, body {
   position   : absolute;
   bottom     : 5px;
   left       : 5px;
-  padding    : 3px;
-  font-size  : smaller;
-  color      : #336699;
+  padding    : 5px;
+  color      : #196fa6;
   background : rgba(255, 255, 255, 0.8);
+  box-shadow : 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 #color-pallet-pane,
@@ -578,13 +474,13 @@ html, body {
 }
 
 .basemap-node {
-  cursor     : pointer;
-  padding    : 3px;
-  min-height : 80px;
+  cursor       : pointer;
+  padding-left : 5px;
+  min-height   : 85px;
 }
 
 .basemap-title-node {
-  font-size : larger;
+  font-weight : bolder;
 }
 
 .basemap-thumb-node {
@@ -601,8 +497,7 @@ html, body {
 }
 
 .item-title {
-  float  : left;
-  margin : 3px;
+  float : left;
 }
 
 .item-title .dijitValidationTextBox {
@@ -611,24 +506,6 @@ html, body {
 
 #grayscale-select .dijitSelectLabel {
   color : #444 !important;
-}
-
-.variations-node {
-  float       : left;
-  margin-left : 20px;
-  font-size   : smaller;
-}
-
-.variations-grid {
-  height : 25px !important;
-}
-
-.variations-grid .dgrid {
-  /*height : unset !important;*/
-}
-
-.claro .dijitToggleButton .dijitCheckBoxIcon {
-  background-image : url("../images/checkmarkNoBorder.png");
 }
 
 .basemap-item-action {
@@ -646,9 +523,57 @@ html, body {
 }
 
 .basemap-item-action:hover {
-  color : #336699;
+  color : #196fa6;
 }
 
 .basemap-item-action:active {
   color : #21cdfa;
 }
+
+.calcite .dijitDialogCloseIcon,
+.calcite .dijitDialogCloseIcon:hover {
+  color   : #fff;
+  opacity : 1.0;
+}
+
+.calcite .dijitDialogTitleBar,
+.calcite .dijitButtonNode {
+  background : #196fa6 !important;
+  border     : none !important;
+}
+
+.dijitButtonHover .dijitButtonNode,
+.dijitToggleButtonHover .dijitButtonNode {
+  background : #024a7e !important;
+}
+
+.calcite .dijitDialogTitle,
+.calcite .dijitButtonText {
+  color : #fff !important;
+}
+
+.calcite .dijitCheckBox,
+.calcite .dijitCheckBoxIcon,
+.calcite .dijitToolbar .dijitButton,
+.calcite .dijitToolbar .dijitArrowButton,
+.calcite .dijitToolbar .dijitArrowButtonInner {
+  color : #fff !important;
+}
+
+.calcite .dojoxMultiSelectItem {
+  cursor  : pointer;
+  padding : 3px !important;
+}
+
+.calcite .dojoxMultiSelectItem:hover > .dojoxMultiSelectItemLabel {
+  color : #196fa6;
+}
+
+.calcite .dojoxMultiSelectItemLabel {
+  margin-left : 5px;
+}
+
+.calcite .dijitDialogPaneActionBar {
+  background-color : #F8F8FF;
+}
+

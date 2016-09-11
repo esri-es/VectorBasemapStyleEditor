@@ -1,0 +1,41 @@
+@import url("//js.arcgis.com/3.17/dojox/widget/ColorPicker/ColorPicker.css");
+
+.colorSelectorDlg {
+  /*...*/
+}
+
+.colorSelectorDlg-selector-container {
+  width  : 725px;
+  height : 225px;
+}
+
+.colorSelectorDlg-selector-custom-container {
+  width : 350px;
+}
+
+.variations-node {
+  float       : left;
+  margin-left : 20px;
+}
+
+.dijitColorPalette,
+.dojoxColorPicker {
+  background : none !important;
+  border     : none !important;
+}
+
+.dojoxColorPickerOptional input {
+  width : 40px;
+}
+
+.dijitColorPalette .dijitPaletteImg {
+  padding : 2px !important;
+}
+
+.dijitColorPalette .dijitPaletteImg .dijitColorPaletteSwatch,
+.dijitColorPalette .dijitPaletteCell:hover .dijitPaletteImg .dijitColorPaletteSwatch,
+.dijitColorPalette .dijitPaletteCell:active .dijitPaletteImg .dijitColorPaletteSwatch,
+.dijitColorPalette .dijitPaletteCell.dijitPaletteCellSelected .dijitPaletteImg .dijitColorPaletteSwatch {
+  width  : 14px !important;
+  height : 14px !important;
+}

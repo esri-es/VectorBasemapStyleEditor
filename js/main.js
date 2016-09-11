@@ -252,7 +252,8 @@ define([
     updateUserInfo: function () {
       var portalUserNode = dom.byId("portaluser-section");
       if(this.portalUser) {
-        put(portalUserNode, "tr td $ <td img.user-thumb", this.portalUser.fullName, { src: this.portalUser.thumbnailUrl });
+        var thumbnailUrl = this.portalUser.thumbnailUrl || 'https://cdn.arcgis.com/cdn/10175/js/arcgisonline/css/images/no-user-thumb.jpg';
+        put(portalUserNode, "tr td $ <td img.user-thumb", this.portalUser.fullName, { src: thumbnailUrl });
       } else {
         portalUserNode.innerHTML = "";
       }
